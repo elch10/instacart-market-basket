@@ -61,7 +61,7 @@ SELECT * FROM (
 ```
 ![](images/2.png)
 
-This products can be products which are so good, or so bad after buying.
+This products can be so good, or so bad after buying. Products in the bottom also can be new, or fastly ended.
 
 - What are the top 20 most/least frequently purchased aisles?
 ```sql
@@ -184,7 +184,7 @@ LIMIT 10
 ```
 ![](images/8.png)
 
-So, this products are necessairly for life products
+This aisles relate to day-to-day products. So it's normal to be first added to the cart.
 
 
 - Products with least percentage of reorderings by users? This can be products with bad quality, rarely purchased goods like household chemicals or may be this product is not more exist at stores. You can note, that we try to find not simple avg of reordered field, but the fraction of number of buyings to total number of buys
