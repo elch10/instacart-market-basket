@@ -2,6 +2,26 @@ Visualizations made by [Grafana](https://grafana.com/) using dashboard with MySQ
 
 All data is checked using `order_products__prior` database, because it has similar distributions to `order_products__train`.
 
+So, lets take optimize database by creating index. Index was generated through UI, and it returns such code
+
+```sql
+-- orders
+CREATE UNIQUE INDEX `idx_orders_order_id`  ON `instacart`.`orders` (order_id) COMMENT '' ALGORITHM DEFAULT LOCK DEFAULT
+CREATE UNIQUE INDEX `idx_orders_order_id_user_id`  ON `instacart`.`orders` (order_id, user_id) COMMENT '' ALGORITHM DEFAULT LOCK DEFAULT;
+
+-- products
+CREATE UNIQUE INDEX `idx_products_product_id`  ON `instacart`.`products` (product_id) COMMENT '' ALGORITHM DEFAULT LOCK DEFAULT;
+
+-- order_products__prior
+CREATE INDEX `idx_order_products__prior_order_id`  ON `instacart`.`order_products__prior` (order_id) COMMENT '' ALGORITHM DEFAULT LOCK DEFAULT;
+CREATE UNIQUE INDEX `idx_order_products__prior_order_id_product_id`  ON `instacart`.`order_products__prior` (order_id, product_id) COMMENT '' ALGORITHM DEFAULT LOCK DEFAULT;
+
+-- order_products__train
+CREATE INDEX `idx_order_products__train_order_id`  ON `instacart`.`order_products__train` (order_id) COMMENT '' ALGORITHM DEFAULT LOCK DEFAULT;
+CREATE UNIQUE INDEX `idx_order_products__train_order_id_product_id`  ON `instacart`.`order_products__train` (order_id, product_id) COMMENT '' ALGORITHM DEFAULT LOCK DEFAULT;
+```
+
+
 - What are the top 20 most/least frequently purchased products?
 ```sql
 WITH product_cnt AS (
@@ -20,24 +40,28 @@ SELECT * FROM (
 ```
 ![](images/1.png)
 
+We have some products, with only 1 buyings. Maybe they new/lie in pantry, or they placed in positions when people don't see them. Or maybe company has only one piece such product to sell (which is strange)
+
 - What are the top 20 most/least reordered products?
 ```sql
+
 WITH product_reorders AS (
-    SELECT product_name, AVG(reordered) AS cnt
+    SELECT product_name, SUM(reordered) as s_reordered, COUNT(reordered) as total
     FROM order_products__prior
         INNER JOIN products USING (product_id)
     GROUP BY product_id
 )
 SELECT * FROM (
-    SELECT * FROM product_reorders ORDER BY cnt DESC LIMIT 20
+    SELECT product_name, s_reordered, total - s_reordered FROM product_reorders ORDER BY s_reordered / total DESC LIMIT 20
 ) AS top_products
 UNION ALL
 SELECT * FROM (
-    SELECT * FROM product_reorders ORDER BY cnt LIMIT 20
+    SELECT product_name, s_reordered, total - s_reordered FROM product_reorders ORDER BY s_reordered / total LIMIT 20
 ) AS bottom_products;
 ```
 ![](images/2.png)
 
+This products can be products which are so good, or so bad after buying.
 
 - What are the top 20 most/least frequently purchased aisles?
 ```sql
@@ -62,22 +86,40 @@ SELECT * FROM (
 - What are the top 20 most/least reordered aisles?
 ```sql
 WITH top_aisles  AS (
-    SELECT ANY_VALUE(aisle), AVG(reordered) AS cnt
+    SELECT ANY_VALUE(aisle) as aisle, SUM(reordered) as s_reordered, COUNT(reordered) as total
     FROM order_products__prior
         INNER JOIN products USING (product_id)
         INNER JOIN aisles USING (aisle_id)
     GROUP BY aisle_id
 )
 SELECT * FROM (
-    SELECT * FROM top_aisles ORDER BY cnt DESC LIMIT 20
+    SELECT aisle, s_reordered, total - s_reordered FROM top_aisles ORDER BY s_reordered / total DESC LIMIT 20
 ) AS top_aisles
 UNION ALL
 SELECT * FROM (
-    SELECT * FROM top_aisles ORDER BY cnt LIMIT 20
+    SELECT aisle, s_reordered, total - s_reordered FROM top_aisles ORDER BY s_reordered / total LIMIT 20
 ) AS bottom_aisles
 ```
 ![](images/4.png)
 
+![](images/4_1.png)
+
+Milk, water, fruies, eggs are often reordered products, it's seems adequate as we eat this products most of the time. But it's slightly strange that fresh vegetables is not often reordered products. Lets check
+
+```sql
+SELECT ANY_VALUE(aisle) as aisle, SUM(reordered) as s_reordered, COUNT(reordered) as total
+FROM order_products__prior
+	INNER JOIN products USING (product_id)
+	INNER JOIN aisles USING (aisle_id)
+WHERE aisle = 'fresh vegetables'
+GROUP BY aisle_id
+```
+
+![](images/4_2.png)
+
+2032172/3418021=0.59
+
+Ok, good. It's roughly in the top :)
 
 - top/botoom 10 aisles by products count
 ```sql
@@ -142,6 +184,8 @@ LIMIT 10
 ```
 ![](images/8.png)
 
+So, this products are necessairly for life products
+
 
 - Products with least percentage of reorderings by users? This can be products with bad quality, rarely purchased goods like household chemicals or may be this product is not more exist at stores. You can note, that we try to find not simple avg of reordered field, but the fraction of number of buyings to total number of buys
 
@@ -170,24 +214,6 @@ LIMIT 10;
 ```
 
 This version is very slow and we got `Error Code: 2013. Lost connection to MySQL server during query`
-So, lets take optimize query. Index was generated through UI, and that returns such code
-
-```sql
--- orders
-CREATE UNIQUE INDEX `idx_orders_order_id`  ON `instacart`.`orders` (order_id) COMMENT '' ALGORITHM DEFAULT LOCK DEFAULT
-CREATE UNIQUE INDEX `idx_orders_order_id_user_id`  ON `instacart`.`orders` (order_id, user_id) COMMENT '' ALGORITHM DEFAULT LOCK DEFAULT;
-
--- products
-CREATE UNIQUE INDEX `idx_products_product_id`  ON `instacart`.`products` (product_id) COMMENT '' ALGORITHM DEFAULT LOCK DEFAULT;
-
--- order_products__prior
-CREATE INDEX `idx_order_products__prior_order_id`  ON `instacart`.`order_products__prior` (order_id) COMMENT '' ALGORITHM DEFAULT LOCK DEFAULT;
-CREATE UNIQUE INDEX `idx_order_products__prior_order_id_product_id`  ON `instacart`.`order_products__prior` (order_id, product_id) COMMENT '' ALGORITHM DEFAULT LOCK DEFAULT;
-
--- order_products__train
-CREATE INDEX `idx_order_products__train_order_id`  ON `instacart`.`order_products__train` (order_id) COMMENT '' ALGORITHM DEFAULT LOCK DEFAULT;
-CREATE UNIQUE INDEX `idx_order_products__train_order_id_product_id`  ON `instacart`.`order_products__train` (order_id, product_id) COMMENT '' ALGORITHM DEFAULT LOCK DEFAULT;
-```
 
 So before we had large joins with window functions, that at least can take excessive memory. We rewrite this as several sequential steps for optimizing speed and memory
 
