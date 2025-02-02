@@ -104,7 +104,7 @@ SELECT * FROM (
 
 ![](images/4_1.png)
 
-Milk, water, fruies, eggs are often reordered products, it's seems adequate as we eat this products most of the time. But it's slightly strange that fresh vegetables is not often reordered products. Lets check
+Milk, water, fruies, eggs are often reordered products, it's seems adequate as we eat this products most of the time. And products like desodorants, beauty, skin and hair care we buy and use long period of time. But it's slightly strange that fresh vegetables is not often reordered products. Lets check
 
 ```sql
 SELECT ANY_VALUE(aisle) as aisle, SUM(reordered) as s_reordered, COUNT(reordered) as total
